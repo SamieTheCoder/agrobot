@@ -1,6 +1,5 @@
 FROM python:3.11-slim
 
-# Install Chromium + chromedriver from Debian repos (versions always match)
 RUN apt-get update && apt-get install -y \
     chromium \
     chromium-driver \
@@ -9,11 +8,14 @@ RUN apt-get update && apt-get install -y \
     --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
-# Confirm paths exist (helps debug if wrong)
-RUN which chromium && which chromedriver && echo "✅ Chromium ready"
+# Print exact paths so you can see them in Coolify build logs
+RUN echo "=== Chromium paths ===" \
+    && which chromium || which chromium-browser || echo "NOT FOUND" \
+    && which chromedriver || echo "chromedriver NOT FOUND" \
+    && chromium --version || chromium-browser --version || echo "version check failed" \
+    && chromedriver --version || echo "chromedriver version check failed"
 
 WORKDIR /app
-
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
