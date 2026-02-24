@@ -4,6 +4,7 @@ import time
 import logging
 import pandas as pd
 from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -15,7 +16,6 @@ from selenium.common.exceptions import (
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ── Required columns for validation ──────────────────────────────────────────
 REQUIRED_COLUMNS = [
     'ProductName', 'ProductCIBCode', 'ProductRegDate',
     'InsecticideRegistrationValidUpto', 'ManufacturerName',
@@ -23,33 +23,25 @@ REQUIRED_COLUMNS = [
     'PrincipleCertificateValidUpto', 'RegistrationNo', 'Password'
 ]
 
-# ── Web field ID → Excel column name ─────────────────────────────────────────
 FIELD_MAPPINGS = {
-    'ProductName':             'ProductName',
-    'ProductCIBCode':          'ProductCIBCode',
-    'ProductRegDate':          'ProductRegDate',
-    'ProductImpterManurName':  'ManufacturerName',
-    'PrincipleCertNo':         'PrincipalCerificateNo',
-    'PrincipleCertIssueDate':  'PrincipleCertificateIssueDate',
-    'PrincipleCertValidUpto':  'PrincipleCertificateValidUpto',
-    'ProductValidityDate':     'InsecticideRegistrationValidUpto',
+    'ProductName':            'ProductName',
+    'ProductCIBCode':         'ProductCIBCode',
+    'ProductRegDate':         'ProductRegDate',
+    'ProductImpterManurName': 'ManufacturerName',
+    'PrincipleCertNo':        'PrincipalCerificateNo',
+    'PrincipleCertIssueDate': 'PrincipleCertificateIssueDate',
+    'PrincipleCertValidUpto': 'PrincipleCertificateValidUpto',
+    'ProductValidityDate':    'InsecticideRegistrationValidUpto',
 }
 
 
 def strip_html(value: str) -> str:
-    """Strip HTML tags — handles <span> copy-paste artifacts from web."""
     if not isinstance(value, str):
         return value
     return re.sub(r'<[^>]+>', '', value).strip()
 
 
 def validate_excel(file_path: str):
-    """
-    Validate file and extract credentials.
-    Returns: (df, reg_no, password, error_message)
-    On success: error_message is None
-    On failure: df/reg_no/password are None
-    """
     try:
         df = pd.read_excel(file_path)
     except Exception as e:
@@ -58,16 +50,13 @@ def validate_excel(file_path: str):
     if df.empty:
         return None, None, None, "Excel file has no data rows."
 
-    # Check all required columns exist
     missing = [col for col in REQUIRED_COLUMNS if col not in df.columns]
     if missing:
-        return None, None, None, f"Missing required columns:\n" + "\n".join(f"  • {c}" for c in missing)
+        return None, None, None, "Missing required columns:\n" + "\n".join(f"  • {c}" for c in missing)
 
-    # Strip HTML from all string columns upfront
     for col in df.columns:
         df[col] = df[col].apply(lambda x: strip_html(x) if isinstance(x, str) else x)
 
-    # Extract credentials from first row that has them
     reg_no, password = None, None
     for _, row in df.iterrows():
         if pd.notna(row.get('RegistrationNo')) and str(row['RegistrationNo']).strip() not in ('', 'nan'):
@@ -86,16 +75,48 @@ def validate_excel(file_path: str):
 
 
 def get_chrome_driver() -> webdriver.Chrome:
-    """Headless Chrome — works in Docker on Oracle server."""
+    """
+    Uses system Chromium installed via apt in Docker.
+    Falls back to PATH for local development.
+    """
     options = webdriver.ChromeOptions()
     options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
     options.add_argument("--disable-extensions")
-    options.add_argument("--window-size=1920,1080")
     options.add_argument("--disable-images")
+    options.add_argument("--window-size=1920,1080")
+    options.add_argument("--remote-debugging-port=9222")
     options.page_load_strategy = 'eager'
+
+    # ── Docker path (apt-installed Chromium) ──────────────────────────────────
+    chromium_paths = [
+        "/usr/bin/chromium",
+        "/usr/bin/chromium-browser",
+        "/usr/bin/google-chrome",
+    ]
+    chromedriver_paths = [
+        "/usr/bin/chromedriver",
+        "/usr/lib/chromium/chromedriver",
+        "/usr/lib/chromium-browser/chromedriver",
+    ]
+
+    # Find Chromium binary
+    for binary in chromium_paths:
+        if os.path.exists(binary):
+            options.binary_location = binary
+            logger.info(f"Using Chromium binary: {binary}")
+            break
+
+    # Find chromedriver
+    for driver_path in chromedriver_paths:
+        if os.path.exists(driver_path):
+            logger.info(f"Using chromedriver: {driver_path}")
+            return webdriver.Chrome(service=Service(driver_path), options=options)
+
+    # ── Fallback: system PATH (local dev on Windows/Mac) ─────────────────────
+    logger.info("Using chromedriver from system PATH")
     return webdriver.Chrome(options=options)
 
 
@@ -160,19 +181,6 @@ class RobustElementHandler:
 
 
 def process_file(file_path: str, progress_callback=None):
-    """
-    Run full automation for one Excel file.
-
-    progress_callback(current: int, total: int, product_name: str)
-        Called after each row attempt (success or fail).
-
-    Returns:
-        (success_count: int, error_list: list[str])
-
-    Raises:
-        ValueError  — validation failed (before browser opens)
-        Exception   — login/page failure
-    """
     df, reg_no, password, error = validate_excel(file_path)
     if error:
         raise ValueError(error)
@@ -185,7 +193,6 @@ def process_file(file_path: str, progress_callback=None):
     handler = RobustElementHandler(driver)
 
     try:
-        # ── Navigate & Login ──────────────────────────────────────────────────
         driver.get("https://onlinedbtagriservice.bihar.gov.in/Licence/LicenceForm/ProductDetails")
         handler.wait_for_page_load()
 
@@ -194,13 +201,11 @@ def process_file(file_path: str, progress_callback=None):
         handler.safe_send_keys((By.ID, "Password"), password)
         handler.safe_click((By.CSS_SELECTOR, "#loginForm > form > button:nth-child(4)"))
 
-        # ── Wait for post-login form ──────────────────────────────────────────
         handler.wait_for_page_load()
         handler.safe_find_element((By.ID, 'ProductCIBCode'), timeout=45)
 
         add_btn = (By.CSS_SELECTOR, "div.col-sm-8 button.btn.btn-primary.btn-block")
 
-        # ── Process each row ──────────────────────────────────────────────────
         for idx, row in df.iterrows():
             product_name = str(row.get('ProductName', f'Row {idx + 1}'))
             try:
