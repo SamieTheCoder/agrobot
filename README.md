@@ -7,6 +7,7 @@
 ![Telegram](https://img.shields.io/badge/Telegram_Bot-21.6-26A5E4?style=for-the-badge&logo=telegram&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=for-the-badge&logo=docker&logoColor=white)
 ![Coolify](https://img.shields.io/badge/Coolify-Deployed-7C3AED?style=for-the-badge)
+![ARM64](https://img.shields.io/badge/ARM64-Supported-FF6B35?style=for-the-badge&logo=arm&logoColor=white)
 
 **Automated form submission bot for Bihar DBT Agri Service portal**
 *Send an Excel file → Bot validates, fills, and reports back — fully headless*
@@ -21,10 +22,11 @@
 - ✅ **Smart Validation** — checks all 10 required columns before touching the browser
 - 🧹 **HTML Sanitization** — auto-strips `<span>` and other tags copied from web
 - 🔐 **Credential Extraction** — reads `RegistrationNo` + `Password` from the Excel itself
-- 📈 **Live Progress Updates** — real-time pings every 5 rows while filling
+- 📈 **Live Progress Updates** — real-time pings every 20 rows while filling
 - 🛡️ **Robust Error Handling** — retries on stale elements, per-row error isolation
 - 🏁 **Full Completion Report** — success count + per-row error details sent back
 - 🐳 **Docker + Coolify Ready** — one-click deploy on Oracle Cloud
+- ⚡ **ARM64 / aarch64 Native** — runs on Oracle Cloud Ampere (ARM) without issues
 
 ---
 
@@ -46,6 +48,7 @@ Your `.xlsx` file **must** contain all of these columns:
 | `Password` | Portal login password |
 
 > 💡 Credentials only need to be present in the **first row** — they're reused for all rows.
+> 💡 HTML tags like `<span>` in cells are automatically stripped before form submission.
 
 ---
 
@@ -61,8 +64,8 @@ Your `.xlsx` file **must** contain all of these columns:
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/yourusername/bihar-form-filler-bot
-cd bihar-form-filler-bot
+git clone https://github.com/SamieTheCoder/agrobot.git
+cd agrobot
 
 # 2. Install dependencies
 pip install -r requirements.txt
