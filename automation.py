@@ -1,5 +1,6 @@
 import re
 import os
+import shutil
 import time
 import logging
 import pandas as pd
@@ -76,8 +77,9 @@ def validate_excel(file_path: str):
 
 def get_chrome_driver() -> webdriver.Chrome:
     """
-    Uses system Chromium installed via apt in Docker.
-    Falls back to PATH for local development.
+    ARM64-safe Chrome driver init for Oracle Cloud (aarch64).
+    Sets binary_location explicitly so Selenium NEVER calls selenium-manager.
+    selenium-manager has no ARM64 binary and crashes on linux/aarch64.
     """
     options = webdriver.ChromeOptions()
     options.add_argument("--headless=new")
@@ -87,37 +89,55 @@ def get_chrome_driver() -> webdriver.Chrome:
     options.add_argument("--disable-extensions")
     options.add_argument("--disable-images")
     options.add_argument("--window-size=1920,1080")
-    options.add_argument("--remote-debugging-port=9222")
     options.page_load_strategy = 'eager'
 
-    # ── Docker path (apt-installed Chromium) ──────────────────────────────────
-    chromium_paths = [
-        "/usr/bin/chromium",
-        "/usr/bin/chromium-browser",
-        "/usr/bin/google-chrome",
-    ]
-    chromedriver_paths = [
-        "/usr/bin/chromedriver",
-        "/usr/lib/chromium/chromedriver",
-        "/usr/lib/chromium-browser/chromedriver",
-    ]
+    # ── Step 1: Find Chromium binary ──────────────────────────────────────────
+    # MUST set binary_location on ARM64 — skips broken selenium-manager entirely
+    chromium_binary = (
+        shutil.which('chromium') or
+        shutil.which('chromium-browser') or
+        shutil.which('google-chrome')
+    )
 
-    # Find Chromium binary
-    for binary in chromium_paths:
-        if os.path.exists(binary):
-            options.binary_location = binary
-            logger.info(f"Using Chromium binary: {binary}")
-            break
+    if not chromium_binary:
+        for path in ['/usr/bin/chromium', '/usr/bin/chromium-browser']:
+            if os.path.exists(path):
+                chromium_binary = path
+                break
 
-    # Find chromedriver
-    for driver_path in chromedriver_paths:
-        if os.path.exists(driver_path):
-            logger.info(f"Using chromedriver: {driver_path}")
-            return webdriver.Chrome(service=Service(driver_path), options=options)
+    if not chromium_binary:
+        raise Exception(
+            "Chromium not found! "
+            "Make sure Dockerfile installs 'chromium' via apt."
+        )
 
-    # ── Fallback: system PATH (local dev on Windows/Mac) ─────────────────────
-    logger.info("Using chromedriver from system PATH")
-    return webdriver.Chrome(options=options)
+    options.binary_location = chromium_binary
+    logger.info(f"Chromium binary: {chromium_binary}")
+
+    # ── Step 2: Find chromedriver ─────────────────────────────────────────────
+    chromedriver = (
+        shutil.which('chromedriver') or
+        shutil.which('chromium.chromedriver')
+    )
+
+    if not chromedriver:
+        for path in [
+            '/usr/bin/chromedriver',
+            '/usr/lib/chromium/chromedriver',
+            '/usr/lib/chromium-browser/chromedriver',
+        ]:
+            if os.path.exists(path):
+                chromedriver = path
+                break
+
+    if not chromedriver:
+        raise Exception(
+            "chromedriver not found! "
+            "Make sure Dockerfile installs 'chromium-driver' via apt."
+        )
+
+    logger.info(f"chromedriver: {chromedriver}")
+    return webdriver.Chrome(service=Service(chromedriver), options=options)
 
 
 class RobustElementHandler:
