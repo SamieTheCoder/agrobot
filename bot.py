@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 
 # How often to send a live progress ping (every N rows)
-PROGRESS_PING_EVERY = 5
+PROGRESS_PING_EVERY = 20
 
 
 # ── /start ────────────────────────────────────────────────────────────────────
